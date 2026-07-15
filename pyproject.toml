@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoai-qa-agents"
+version = "0.1.0"
+description = "Local-first QA agents powered by Ollama."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "mcp[cli]>=1.27.1",
+  "pydantic>=2.11",
+  "pydantic-settings>=2.8",
+  "playwright>=1.49",
+  "pytest-timeout>=2.3",
+  "pypdf>=5.4",
+  "python-docx>=1.1",
+  "python-multipart>=0.0.20",
+  "PyYAML>=6.0",
+  "uvicorn>=0.34",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.11"]
+
+[project.scripts]
+qa-agent = "qa_agents.cli:main"
+qa-planning-agent = "qa_agents.planning_cli:main"
+qa-design-agent = "qa_agents.design_cli:main"
+qa-automation-agent = "qa_agents.automation_cli:main"
+qa-runner-agent = "qa_agents.automation_runner_cli:main"
+qa-defect-agent = "qa_agents.defect_cli:main"
+qa-agent-mcp = "qa_agents.mcp_server:main"
+qa-agent-ui = "qa_agents.web:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qa_agents = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -p no:rerunfailures"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
