@@ -258,6 +258,57 @@ class ExecutionReport(BaseModel):
     summary: str
     findings: list[str] = Field(default_factory=list)
     self_healing: list[SelfHealingSuggestion] = Field(default_factory=list)
+
+
+class DomSelectorCandidate(BaseModel):
+    selector: str
+    strategy: str
+    stability: Priority = Priority.MEDIUM
+    reason: str
+
+
+class DomElement(BaseModel):
+    tag: str
+    role: str | None = None
+    text: str | None = None
+    label: str | None = None
+    placeholder: str | None = None
+    name: str | None = None
+    element_type: str | None = None
+    href: str | None = None
+    selector_candidates: list[DomSelectorCandidate] = Field(default_factory=list)
+
+
+class DomPage(BaseModel):
+    url: str
+    title: str | None = None
+    elements: list[DomElement] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
+
+
+class DomInspectionReport(BaseModel):
+    target_url: str
+    pages: list[DomPage] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class PageObjectModelExport(BaseModel):
+    target_url: str
+    report: DomInspectionReport
+    files: dict[str, str] = Field(default_factory=dict)
+
+
+class TestManagementTool(StrEnum):
+    XRAY = "xray"
+    ZEPHYR = "zephyr"
+    TESTRAIL = "testrail"
+
+
+class TestManagementExport(BaseModel):
+    tool: TestManagementTool
+    source_summary: str
+    row_count: int
+    files: dict[str, str] = Field(default_factory=dict)
     run_report_markdown_path: str | None = None
     report_json_path: str | None = None
     report_markdown_path: str | None = None

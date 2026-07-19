@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from qa_agents import web
-from qa_agents.models import AutomationRunResult, AutomationRunStatus
+from qa_agents.models import AutomationRunResult, AutomationRunStatus, DomInspectionReport
 from qa_agents.models import TestCaseSuite as Suite
 
 SUITE = Suite.model_validate(
@@ -180,3 +180,63 @@ def test_downloads_runner_report_as_markdown_json_and_csv(monkeypatch, tmp_path:
     assert json_response.status_code == 200
     assert csv_response.status_code == 200
     assert "Run failed." in csv_response.text
+
+
+def test_dom_inspection_endpoint_exports_downloads(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(web, "DOM_OUTPUT_ROOT", tmp_path)
+
+    def fake_inspect(self, target_url, max_pages=3, headed=False, timeout_ms=15000):
+        return DomInspectionReport.model_validate(
+            {
+                "target_url": target_url,
+                "pages": [
+                    {
+                        "url": target_url,
+                        "title": "Home",
+                        "elements": [
+                            {
+                                "tag": "button",
+                                "role": "button",
+                                "text": "Save",
+                                "selector_candidates": [
+                                    {
+                                        "selector": "page.get_by_role('button', name='Save')",
+                                        "strategy": "role-name",
+                                        "stability": "high",
+                                        "reason": "Accessible selector.",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(web.DomInspectionAgent, "inspect", fake_inspect)
+
+    client = TestClient(web.app)
+    response = client.post("/api/dom-inspect", data={"target_url": "https://staging.example.test"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert client.get(payload["downloads"]["json"]).status_code == 200
+    assert client.get(payload["downloads"]["md"]).status_code == 200
+    assert client.get(payload["downloads"]["pom"]).status_code == 200
+
+
+def test_test_management_export_endpoint(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(web, "TEST_MANAGEMENT_OUTPUT_ROOT", tmp_path)
+    client = TestClient(web.app)
+
+    response = client.post(
+        "/api/test-management-export",
+        data={"tool": "testrail", "test_cases": SUITE.model_dump_json()},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["artifact"]["row_count"] == 1
+    csv_response = client.get(payload["downloads"]["csv"])
+    assert csv_response.status_code == 200
+    assert "Update display name" in csv_response.text

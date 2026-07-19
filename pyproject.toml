@@ -32,6 +32,8 @@ qa-design-agent = "qa_agents.design_cli:main"
 qa-automation-agent = "qa_agents.automation_cli:main"
 qa-runner-agent = "qa_agents.automation_runner_cli:main"
 qa-defect-agent = "qa_agents.defect_cli:main"
+qa-dom-agent = "qa_agents.dom_cli:main"
+qa-test-management-agent = "qa_agents.test_management_cli:main"
 qa-agent-mcp = "qa_agents.mcp_server:main"
 qa-agent-ui = "qa_agents.web:main"
 

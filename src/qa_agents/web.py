@@ -23,6 +23,7 @@ from qa_agents.automation_runner_agent import AutomationRunnerAgent
 from qa_agents.config import get_settings
 from qa_agents.defect_agent import DefectCreationAgent
 from qa_agents.design_agent import TestDesignDataAgent
+from qa_agents.dom_agent import DomInspectionAgent
 from qa_agents.exporters import export_suite, suite_to_markdown
 from qa_agents.models import SourceMaterial
 from qa_agents.ollama import OllamaError
@@ -32,13 +33,17 @@ from qa_agents.reporting_agent import ReportingAgent
 from qa_agents.sources import FigmaSourceLoader, FileSourceLoader
 from qa_agents.sources.files import UnsupportedSourceError
 from qa_agents.test_case_agent import TestCaseAgent
+from qa_agents.test_management_agent import TestManagementExportAgent
 
 PACKAGE_DIR = Path(__file__).parent
 PROJECT_ROOT = Path.cwd()
 OUTPUT_ROOT = PROJECT_ROOT / "output" / "web"
 AUTOMATION_OUTPUT_ROOT = PROJECT_ROOT / "output" / "automation-web"
 ARTIFACT_OUTPUT_ROOT = PROJECT_ROOT / "output" / "artifacts-web"
+DOM_OUTPUT_ROOT = PROJECT_ROOT / "output" / "dom-web"
+TEST_MANAGEMENT_OUTPUT_ROOT = PROJECT_ROOT / "output" / "test-management-web"
 SAFE_RESULT_ID = re.compile(r"^[a-f0-9]{32}$")
+SAFE_TEST_MANAGEMENT_TOOL = {"xray", "zephyr", "testrail"}
 DOWNLOAD_NAMES = {
     "md": "test-cases.md",
     "json": "test-cases.json",
@@ -194,6 +199,93 @@ async def generate_automation(
     }
 
 
+@app.post("/api/dom-inspect")
+async def inspect_dom_and_export_pom(
+    target_url: Annotated[str, Form()],
+    max_pages: Annotated[int, Form()] = 3,
+    headed: Annotated[bool, Form()] = False,
+) -> dict[str, object]:
+    progress = ConsoleProgress("DomInspectionAgent")
+    try:
+        progress.update(15, "Inspecting DOM and collecting selectors")
+        report = await run_in_threadpool(
+            DomInspectionAgent().inspect,
+            target_url.strip(),
+            min(max(max_pages, 1), 10),
+            headed,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"DOM inspection failed: {exc}") from exc
+
+    result_id = uuid.uuid4().hex
+    result_dir = DOM_OUTPUT_ROOT / result_id
+    pom_dir = result_dir / "pom"
+    result_dir.mkdir(parents=True, exist_ok=False)
+    progress.update(80, "Exporting Page Object Model scaffold")
+    pom = DomInspectionAgent().export_page_objects(report, pom_dir)
+    (result_dir / "dom-report.json").write_text(
+        json.dumps(report.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+    (result_dir / "dom-report.md").write_text(_dom_report_markdown(report), encoding="utf-8")
+    zip_path = result_dir / "page-object-model.zip"
+    _zip_directory(pom_dir, zip_path)
+    progress.complete("DOM inspection and POM export ready")
+
+    return {
+        "result_id": result_id,
+        "report": report.model_dump(mode="json"),
+        "pom": {"files": list(pom.files)},
+        "markdown": _dom_report_markdown(report),
+        "downloads": {
+            "json": f"/api/dom-download/{result_id}/json",
+            "md": f"/api/dom-download/{result_id}/md",
+            "pom": f"/api/dom-download/{result_id}/pom",
+        },
+    }
+
+
+@app.post("/api/test-management-export")
+async def export_test_management(
+    tool: Annotated[str, Form()] = "xray",
+    test_cases: Annotated[str, Form()] = "",
+    test_cases_file: Annotated[UploadFile | None, File()] = None,
+) -> dict[str, object]:
+    selected_tool = tool.strip().lower()
+    if selected_tool not in SAFE_TEST_MANAGEMENT_TOOL:
+        raise HTTPException(status_code=422, detail="Tool must be xray, zephyr, or testrail.")
+    settings = get_settings()
+    with tempfile.TemporaryDirectory(prefix="autoai-test-management-uploads-") as temp_dir:
+        temp_root = Path(temp_dir)
+        saved_text = test_cases.strip()
+        if test_cases_file and test_cases_file.filename:
+            saved_paths = await _save_uploads([test_cases_file], temp_root, settings.qa_agent_max_upload_mb)
+            saved_text = saved_paths[0].read_text(encoding="utf-8")
+        if not saved_text:
+            raise HTTPException(status_code=400, detail="Add test cases as a file or pasted text.")
+
+    result_id = uuid.uuid4().hex
+    result_dir = TEST_MANAGEMENT_OUTPUT_ROOT / result_id
+    try:
+        export = TestManagementExportAgent().export(saved_text, selected_tool, result_dir)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    (result_dir / "export.json").write_text(
+        json.dumps(export.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "result_id": result_id,
+        "artifact": export.model_dump(mode="json"),
+        "downloads": {
+            "csv": f"/api/test-management-download/{result_id}/{selected_tool}/csv",
+            "json": f"/api/test-management-download/{result_id}/{selected_tool}/json",
+        },
+    }
+
+
 @app.post("/api/generate")
 async def generate_test_cases(
     files: Annotated[list[UploadFile] | None, File()] = None,
@@ -272,6 +364,48 @@ def download_automation(result_id: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Download not found.")
     return FileResponse(path, media_type="application/zip", filename="playwright-automation.zip")
+
+
+@app.get("/api/dom-download/{result_id}/{file_type}")
+def download_dom_artifact(result_id: str, file_type: str) -> FileResponse:
+    if not SAFE_RESULT_ID.fullmatch(result_id) or file_type not in {"json", "md", "pom"}:
+        raise HTTPException(status_code=404, detail="Download not found.")
+    names = {
+        "json": ("dom-report.json", "application/json", "dom-report.json"),
+        "md": ("dom-report.md", "text/markdown", "dom-report.md"),
+        "pom": ("page-object-model.zip", "application/zip", "page-object-model.zip"),
+    }
+    filename, media_type, download_name = names[file_type]
+    path = DOM_OUTPUT_ROOT / result_id / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Download not found.")
+    return FileResponse(path, media_type=media_type, filename=download_name)
+
+
+@app.get("/api/test-management-download/{result_id}/{tool}/{file_type}")
+def download_test_management_export(result_id: str, tool: str, file_type: str) -> FileResponse:
+    tool = tool.lower()
+    if (
+        not SAFE_RESULT_ID.fullmatch(result_id)
+        or tool not in SAFE_TEST_MANAGEMENT_TOOL
+        or file_type not in {"csv", "json"}
+    ):
+        raise HTTPException(status_code=404, detail="Download not found.")
+    if file_type == "json":
+        path = TEST_MANAGEMENT_OUTPUT_ROOT / result_id / "export.json"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Download not found.")
+        return FileResponse(path, media_type="application/json", filename=f"{tool}-export.json")
+
+    csv_name = {
+        "xray": "xray-import.csv",
+        "zephyr": "zephyr-import.csv",
+        "testrail": "testrail-import.csv",
+    }[tool]
+    path = TEST_MANAGEMENT_OUTPUT_ROOT / result_id / csv_name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Download not found.")
+    return FileResponse(path, media_type="text/csv", filename=csv_name)
 
 
 @app.get("/api/artifact-download/{kind}/{result_id}/{file_type}")
@@ -496,6 +630,37 @@ def _report_to_csv(report_path: Path) -> str:
     return buffer.getvalue()
 
 
+def _dom_report_markdown(report) -> str:
+    lines = [
+        "# DOM Inspection Report",
+        "",
+        f"Target URL: {report.target_url}",
+    ]
+    for recommendation in report.recommendations:
+        lines.append(f"- {recommendation}")
+    for page in report.pages:
+        lines.extend(["", f"## {page.title or 'Untitled page'}", "", f"URL: `{page.url}`", ""])
+        if not page.elements:
+            lines.append("No interactive elements discovered.")
+            continue
+        lines.extend(["| Element | Best selector | Reason |", "|---|---|---|"])
+        for element in page.elements[:80]:
+            best = element.selector_candidates[0] if element.selector_candidates else None
+            label = element.label or element.placeholder or element.text or element.name or element.tag
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        str(label).replace("|", "\\|"),
+                        f"`{best.selector}`" if best else "n/a",
+                        (best.reason if best else "No selector candidate.").replace("|", "\\|"),
+                    ]
+                )
+                + " |"
+            )
+    return "\n".join(lines).strip() + "\n"
+
+
 def _zip_directory(source_dir: Path, zip_path: Path) -> None:
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in source_dir.rglob("*"):
@@ -524,6 +689,8 @@ def main() -> None:
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     AUTOMATION_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     ARTIFACT_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    DOM_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    TEST_MANAGEMENT_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     uvicorn.run("qa_agents.web:app", host="127.0.0.1", port=8000, reload=False)
 
 
