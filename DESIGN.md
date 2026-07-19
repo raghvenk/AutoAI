@@ -38,11 +38,14 @@ The key design goal is to keep each QA responsibility in a separate agent with v
 - Generate test plans from BRD, PRD, Figma, screenshots, or manual instructions.
 - Generate test design scenarios and synthetic test data.
 - Generate structured test cases.
+- Inspect real application DOM and discover selector candidates before automation.
 - Generate executable Playwright Python automation projects.
+- Export Page Object Model scaffolds.
 - Run generated automation from the UI or CLI.
 - Produce execution reports in Markdown/JSON/CSV-compatible formats.
 - Analyze failures and provide self-healing locator guidance.
 - Create draft defects from failed execution reports or manual failure notes.
+- Export test cases for Xray, Zephyr, and TestRail import workflows.
 - Keep sensitive product material local by using Ollama.
 
 ## 3. Non-goals
@@ -50,7 +53,7 @@ The key design goal is to keep each QA responsibility in a separate agent with v
 - Full replacement for human QA review.
 - Guaranteed automation success for every arbitrary website.
 - Direct integration with Jira/Azure DevOps/GitHub Issues yet.
-- Full browser DOM crawling or selector recording agent yet.
+- Hosted/synchronized Xray, Zephyr, or TestRail API publishing. Current support is local import-file export.
 - Production-grade distributed execution or CI orchestration.
 
 ## 4. Technology Stack
@@ -107,11 +110,13 @@ src/qa_agents/
   planning_agent.py            Test Planning Agent
   design_agent.py              Test Design + Test Data Agent
   test_case_agent.py           Test Case Agent
+  dom_agent.py                 DOM Inspection + Page Object Model Agent
   automation_agent.py          Automation generation agent
   automation_runner_agent.py   Runner Agent
   reporting_agent.py           Reporting Agent
   self_healing_agent.py        Self-Healing analysis agent
   defect_agent.py              Defect Creation Agent
+  test_management_agent.py     Xray/Zephyr/TestRail export agent
 
   exporters.py                 Test-case Markdown/JSON/CSV export
   artifact_exporters.py        Plan/design/defect Markdown/JSON export
@@ -210,7 +215,30 @@ Responsibilities:
 - Prefer accessibility-first Playwright locators.
 - Capture assumptions and setup notes.
 
-### 7.5 Automation Exporter
+### 7.5 DOM Inspection + Page Object Model Agent
+
+File: `src/qa_agents/dom_agent.py`
+
+Input:
+
+- target URL
+- max pages to crawl
+- optional headed browser mode
+
+Output:
+
+- `DomInspectionReport`
+- `PageObjectModelExport`
+
+Responsibilities:
+
+- Use Playwright to crawl same-origin pages.
+- Discover interactive DOM elements.
+- Rank selector candidates such as `data-testid`, role/name, label, placeholder, text, and CSS fallbacks.
+- Export a Python Page Object Model scaffold under `pages/`.
+- Produce Markdown/JSON selector reports for review before automation generation.
+
+### 7.6 Automation Exporter
 
 File: `src/qa_agents/automation_exporters.py`
 
@@ -234,7 +262,7 @@ Responsibilities:
 - Add runtime self-healing helpers.
 - Refresh runtime support files before runner execution.
 
-### 7.6 Automation Runner Agent
+### 7.7 Automation Runner Agent
 
 File: `src/qa_agents/automation_runner_agent.py`
 
@@ -422,14 +450,18 @@ Important routes:
 | `POST /api/plan` | Generate test plan |
 | `POST /api/design` | Generate test design/data |
 | `POST /api/generate` | Generate test cases |
+| `POST /api/dom-inspect` | Inspect DOM and export Page Object Model scaffold |
 | `POST /api/automate` | Generate Playwright automation project |
 | `POST /api/run-automation/{result_id}` | Run UI-generated automation |
 | `POST /api/runner/run` | Run any workspace automation project |
 | `POST /api/defects` | Generate draft defects |
+| `POST /api/test-management-export` | Export test cases for Xray/Zephyr/TestRail |
 | `GET /api/download/{result_id}/{file_type}` | Download test cases |
+| `GET /api/dom-download/{result_id}/{file_type}` | Download DOM report or POM zip |
 | `GET /api/automation-download/{result_id}` | Download automation zip |
 | `GET /api/artifact-download/{kind}/{result_id}/{file_type}` | Download plan/design/defect artifacts |
 | `GET /api/report-download` | Download runner reports |
+| `GET /api/test-management-download/{result_id}/{tool}/{file_type}` | Download test management export |
 
 ## 12. CLI Design
 
@@ -440,9 +472,11 @@ Configured in `pyproject.toml`.
 | `qa-planning-agent` | Generate test plan |
 | `qa-design-agent` | Generate test design and test data |
 | `qa-agent` | Generate test cases |
+| `qa-dom-agent` | Inspect DOM and export Page Object Model scaffold |
 | `qa-automation-agent` | Generate Playwright automation project |
 | `qa-runner-agent` | Run generated automation |
 | `qa-defect-agent` | Generate defects from reports/failure notes |
+| `qa-test-management-agent` | Export test cases for Xray/Zephyr/TestRail |
 | `qa-agent-mcp` | Run MCP server |
 | `qa-agent-ui` | Run web UI |
 
@@ -525,18 +559,16 @@ make lint
 - CAPTCHA, MFA, OTP, SSO, email verification, payments, and admin-only flows need explicit setup.
 - Vision-based generation can still produce large outputs; compact retry reduces but does not eliminate model truncation risk.
 - Defect creation currently produces local draft defects only; no Jira/Azure DevOps integration yet.
+- Test management support currently creates import files; it does not publish directly via vendor APIs.
 - MCP currently exposes a subset of available agents.
 
 ## 19. Recommended Future Enhancements
 
-1. DOM inspection/crawler agent to discover real selectors before automation generation.
-2. Selector memory store per application.
-3. Page Object Model exporter.
-4. Jira/Azure DevOps/GitHub Issues defect connectors.
-5. Test management export, such as Xray/Zephyr/TestRail.
-6. CI runner profile for GitHub Actions.
-7. Parallel runner and browser matrix.
-8. Evidence capture: screenshots, traces, and videos on failure.
-9. Authentication profile management for apps with login/SSO.
+1. Selector memory store per application.
+2. Jira/Azure DevOps/GitHub Issues defect connectors.
+3. Direct Xray/Zephyr/TestRail API publishing with authentication profiles.
+4. CI runner profile for GitHub Actions.
+5. Parallel runner and browser matrix.
+6. Evidence capture: screenshots, traces, and videos on failure.
+7. Authentication profile management for apps with login/SSO.
 10. Expanded MCP tools for all agents.
-

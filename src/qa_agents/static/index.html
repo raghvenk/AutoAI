@@ -60,11 +60,11 @@
     .file-pill { display: flex; justify-content: space-between; gap: 10px; padding: 8px 11px; border-radius: 10px; background: #eef3ef; font-size: 13px; }
     .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: #919a96; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; }
     .divider::before, .divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
-    input[type="url"], input[type="text"], input[type="number"], textarea {
+    input[type="url"], input[type="text"], input[type="number"], textarea, select {
       width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
       color: var(--ink); background: #fff; font: inherit; outline: none; resize: vertical;
     }
-    input:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,108,82,.1); }
+    input:focus, textarea:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(23,108,82,.1); }
     textarea { min-height: 105px; }
     .field { margin-top: 18px; }
     .generate {
@@ -259,7 +259,7 @@
     }
     @keyframes float { 50% { transform: translate(-50%, -54%); } }
     .agent-strip {
-      display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0 0 22px;
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 22px;
     }
     .agent-mini {
       min-height: 104px; padding: 15px; border: 1px solid rgba(148, 163, 184, .18); border-radius: 20px;
@@ -296,11 +296,11 @@
       background: rgba(30, 41, 59, .82); color: #dbeafe;
     }
     .divider::before, .divider::after, th, td { border-color: rgba(148, 163, 184, .2); }
-    input[type="url"], input[type="text"], input[type="number"], textarea {
+    input[type="url"], input[type="text"], input[type="number"], textarea, select {
       border-color: rgba(148, 163, 184, .22); color: #e5edf8; background: rgba(2, 6, 23, .34);
     }
     input::placeholder, textarea::placeholder { color: #64748b; }
-    input:focus, textarea:focus {
+    input:focus, textarea:focus, select:focus {
       border-color: #38bdf8; box-shadow: 0 0 0 4px rgba(56, 189, 248, .12);
     }
     .generate {
@@ -394,8 +394,11 @@
       <div class="agent-mini"><div class="agent-icon">🧭</div><strong>Planning</strong><span>Scope, risks, strategy</span></div>
       <div class="agent-mini"><div class="agent-icon">🧬</div><strong>Design + data</strong><span>Scenarios and datasets</span></div>
       <div class="agent-mini"><div class="agent-icon">✅</div><strong>Test cases</strong><span>Traceable coverage</span></div>
+      <div class="agent-mini"><div class="agent-icon">🕸️</div><strong>DOM crawler</strong><span>Real selectors</span></div>
+      <div class="agent-mini"><div class="agent-icon">📦</div><strong>POM export</strong><span>Page objects</span></div>
       <div class="agent-mini"><div class="agent-icon">🤖</div><strong>Automation</strong><span>Playwright scripts</span></div>
       <div class="agent-mini"><div class="agent-icon">▶️</div><strong>Runner</strong><span>Execution reports</span></div>
+      <div class="agent-mini"><div class="agent-icon">🔁</div><strong>Test management</strong><span>Xray, Zephyr, TestRail</span></div>
       <div class="agent-mini"><div class="agent-icon">🐞</div><strong>Defects</strong><span>Draft bug reports</span></div>
     </section>
 
@@ -461,6 +464,31 @@
     </section>
 
     <section class="agent-board" aria-label="Execution agents">
+    <section class="panel automation agent-module" data-agent="DOM + POM agent">
+      <h2>Inspect DOM and export POM</h2>
+      <p>Crawl the real application DOM before automation generation, discover stable selectors, and download a Page Object Model scaffold.</p>
+      <form id="domForm">
+        <label class="title" for="domTargetUrl">Target URL</label>
+        <input id="domTargetUrl" name="target_url" type="url" placeholder="https://staging.example.com" required>
+
+        <div class="runner-grid field">
+          <div>
+            <label class="title" for="domMaxPages">Max pages</label>
+            <input id="domMaxPages" name="max_pages" type="number" min="1" max="10" value="3">
+          </div>
+          <label class="checkline" for="domHeaded" style="align-self:end;margin-bottom:12px;">
+            <input id="domHeaded" name="headed" type="checkbox" value="true">
+            Headed browser
+          </label>
+        </div>
+
+        <button id="domButton" class="generate" type="submit">Inspect DOM + export POM</button>
+        <div id="domLoader" class="loader"><span class="spinner"></span><span>Inspecting pages and selectors…</span></div>
+        <div id="domError" class="error"></div>
+        <div id="domResult" class="artifact-result"></div>
+      </form>
+    </section>
+
     <section class="panel automation agent-module" data-agent="Automation agent">
       <h2>Automate test cases</h2>
       <p>Enter the test URL and paste or upload your test cases. The QA automation agent will generate a downloadable Playwright Python project with synthetic test data where needed.</p>
@@ -487,6 +515,34 @@
         <div id="automationLoader" class="loader"><span class="spinner"></span><span>Building Playwright automation with Ollama…</span></div>
         <div id="automationError" class="error"></div>
         <div id="automationResult" class="automation-result"></div>
+      </form>
+    </section>
+
+    <section class="panel automation agent-module" data-agent="Test management export">
+      <h2>Export to Xray, Zephyr, or TestRail</h2>
+      <p>Convert generated test cases into import-friendly files for popular test management tools.</p>
+      <form id="testManagementForm">
+        <label class="title" for="testManagementTool">Tool</label>
+        <select id="testManagementTool" name="tool">
+          <option value="xray">Xray</option>
+          <option value="zephyr">Zephyr</option>
+          <option value="testrail">TestRail</option>
+        </select>
+
+        <div class="field">
+          <label class="title" for="testManagementFile">Test case file <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <input id="testManagementFile" name="test_cases_file" type="file" accept=".md,.markdown,.txt,.json,.csv">
+        </div>
+
+        <div class="field">
+          <label class="title" for="testManagementText">Test cases text</label>
+          <textarea id="testManagementText" name="test_cases" placeholder="Paste generated Markdown/JSON test cases here if you are not uploading a file…"></textarea>
+        </div>
+
+        <button id="testManagementButton" class="generate" type="submit">Export test management file</button>
+        <div id="testManagementLoader" class="loader"><span class="spinner"></span><span>Preparing import file…</span></div>
+        <div id="testManagementError" class="error"></div>
+        <div id="testManagementResult" class="artifact-result"></div>
       </form>
     </section>
 
@@ -578,6 +634,11 @@
     const loader = document.getElementById("loader");
     const errorBox = document.getElementById("error");
     const artifactResult = document.getElementById("artifactResult");
+    const domForm = document.getElementById("domForm");
+    const domButton = document.getElementById("domButton");
+    const domLoader = document.getElementById("domLoader");
+    const domError = document.getElementById("domError");
+    const domResult = document.getElementById("domResult");
     const automationForm = document.getElementById("automationForm");
     const automationButton = document.getElementById("automationButton");
     const automationLoader = document.getElementById("automationLoader");
@@ -596,6 +657,11 @@
     const defectLoader = document.getElementById("defectLoader");
     const defectError = document.getElementById("defectError");
     const defectResult = document.getElementById("defectResult");
+    const testManagementForm = document.getElementById("testManagementForm");
+    const testManagementButton = document.getElementById("testManagementButton");
+    const testManagementLoader = document.getElementById("testManagementLoader");
+    const testManagementError = document.getElementById("testManagementError");
+    const testManagementResult = document.getElementById("testManagementResult");
     let activeRunnerResult = null;
     let latestAutomation = null;
 
@@ -672,6 +738,42 @@
       }
     }
 
+    domForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      domError.style.display = "none";
+      domResult.style.display = "none";
+      domButton.disabled = true;
+      domButton.textContent = "Inspecting…";
+      domLoader.style.display = "flex";
+      try {
+        const formData = new FormData(domForm);
+        if (!document.getElementById("domHeaded").checked) formData.delete("headed");
+        const response = await fetch("/api/dom-inspect", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Unable to inspect DOM.");
+        const pageCount = data.report.pages?.length ?? 0;
+        const elementCount = (data.report.pages || []).reduce((sum, page) => sum + (page.elements?.length || 0), 0);
+        domResult.innerHTML = `
+          <strong>DOM inspection complete.</strong>
+          <p>${pageCount} page(s), ${elementCount} interactive element(s) discovered.</p>
+          <div class="downloads" style="margin-top:10px;">
+            ${Object.entries(data.downloads).map(([format, url]) =>
+              `<a href="${url}">Download ${format.toUpperCase()}</a>`
+            ).join("")}
+          </div>
+          <div class="artifact-preview">${escapeHtml(data.markdown || "")}</div>
+        `;
+        domResult.style.display = "block";
+      } catch (error) {
+        domError.textContent = error.message;
+        domError.style.display = "block";
+      } finally {
+        domButton.disabled = false;
+        domButton.textContent = "Inspect DOM + export POM";
+        domLoader.style.display = "none";
+      }
+    });
+
     automationForm.addEventListener("submit", async event => {
       event.preventDefault();
       automationError.style.display = "none";
@@ -732,6 +834,40 @@
         runButton.textContent = "Run tests";
       }
     }
+
+    testManagementForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      testManagementError.style.display = "none";
+      testManagementResult.style.display = "none";
+      testManagementButton.disabled = true;
+      testManagementButton.textContent = "Exporting…";
+      testManagementLoader.style.display = "flex";
+      try {
+        const response = await fetch("/api/test-management-export", {
+          method: "POST",
+          body: new FormData(testManagementForm),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Unable to export test management file.");
+        testManagementResult.innerHTML = `
+          <strong>${escapeHtml(data.artifact.tool.toUpperCase())} export ready.</strong>
+          <p>${data.artifact.row_count} test case row(s) prepared.</p>
+          <div class="downloads" style="margin-top:10px;">
+            ${Object.entries(data.downloads).map(([format, url]) =>
+              `<a href="${url}">Download ${format.toUpperCase()}</a>`
+            ).join("")}
+          </div>
+        `;
+        testManagementResult.style.display = "block";
+      } catch (error) {
+        testManagementError.textContent = error.message;
+        testManagementError.style.display = "block";
+      } finally {
+        testManagementButton.disabled = false;
+        testManagementButton.textContent = "Export test management file";
+        testManagementLoader.style.display = "none";
+      }
+    });
 
     runnerForm.addEventListener("submit", async event => {
       event.preventDefault();
